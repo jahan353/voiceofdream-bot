@@ -14,9 +14,18 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
     filters, ContextTypes
 )
-from groq import Groq
-from google.generativeai import GenerativeModel, configure
+
+# ابتدا dotenv رو import کنیم
 from dotenv import load_dotenv
+load_dotenv()
+
+# حالا بقیه imports
+try:
+    from groq import Groq
+    from google.generativeai import GenerativeModel, configure
+except ImportError as e:
+    print(f"Import error: {e}")
+    raise
 
 # Configure logging
 logging.basicConfig(
@@ -29,20 +38,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
+# Environment variables با مقادیر پیش‌فرض
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID', '')
+PORT = int(os.environ.get('PORT', 8000))
 
-# Environment variables
-try:
-    TELEGRAM_BOT_TOKEN = os.environ['TELEGRAM_BOT_TOKEN']
-    GEMINI_API_KEY = os.environ['GEMINI_API_KEY']
-    GROQ_API_KEY = os.environ['GROQ_API_KEY']
-    ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID', '')
-    PORT = int(os.environ.get('PORT', 8000))
-    logger.info("Environment variables loaded successfully")
-except KeyError as e:
-    logger.error(f"Missing environment variable: {e}")
-    raise ValueError(f"Environment variable {e} is not set!")
+# بررسی وجود متغیرهای ضروری
+if not TELEGRAM_BOT_TOKEN:
+    logger.error("TELEGRAM_BOT_TOKEN is not set!")
+    raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required!")
+
+if not GEMINI_API_KEY:
+    logger.error("GEMINI_API_KEY is not set!")
+    raise ValueError("GEMINI_API_KEY environment variable is required!")
+
+if not GROQ_API_KEY:
+    logger.error("GROQ_API_KEY is not set!")
+    raise ValueError("GROQ_API_KEY environment variable is required!")
+
+logger.info("Environment variables loaded successfully")
 
 # Configure Gemini and Groq
 try:
@@ -459,12 +475,12 @@ async def interpret_tarot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Interpreting tarot for user {user_id}, layout: {layout_key}")
 
     await update.message.reply_text(
-    "🃏 کارت‌ها در حال چرخش‌اند... لحظه‌ای صبر کن، ای جوینده. ✨"
+        "🃏 کارت‌ها در حال چرخش‌اند... لحظه‌ای صبر کن، ای جوینده. ✨"
     )
     await asyncio.sleep(5)
 
     card_names = [f"{TAROT_CARDS[idx]} ({orient})" for idx, orient in cards]
-    prompt = f"به عنوان استاد فال تاروت، با استفاده از اطلاعات شخصی: جنسیت {gender}، ماه تولد {birth_month}، سال تولد {birth_year}، تفسیر چیدمان {layout_real} با کارت‌های {', '.join(card_names)} را به صورت متنی اغواگرایانه، عرفانی و رازآلود، با ایموجی و نتیجه‌گیری بده."
+    prompt = f"به عنوان استاد فال تاروت، با استفاده از اطلاعات شخصی: جنسیت {gender}، ماه تولد {birth_month}، سال تولد {birth_year}، تفسیر چیدمان {layout_real} با کارت‌های {', '.join(card_names)} را به صورت متنی اغواگرایانه, عرفانی و رازآلود، با ایموجی و نتیجه‌گیری بده."
 
     try:
         response = groq_client.chat.completions.create(
@@ -527,17 +543,29 @@ async def ask_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     try:
+        print("=" * 50)
+        print("STARTING BOT APPLICATION")
+        print("=" * 50)
+        
         logger.info("Starting bot application")
+        
+        # ایجاد برنامه
         application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
+        # اضافه کردن هندلرها
         application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, pre_start))
         application.add_handler(CommandHandler('start', start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_handler(CallbackQueryHandler(handle_callback))
         application.add_handler(MessageHandler(filters.VOICE | filters.PHOTO, handle_message))
 
+        print("All handlers added successfully")
+        logger.info("All handlers added successfully")
+
         # راه حل ساده‌تر: همیشه از polling استفاده کنید
+        print("Running polling (simplified for Railway)")
         logger.info("Running polling (simplified for Railway)")
+        
         application.run_polling(
             drop_pending_updates=True,
             allowed_updates=Update.ALL_TYPES,
@@ -545,5 +573,6 @@ if __name__ == '__main__':
         )
             
     except Exception as e:
+        print(f"CRITICAL ERROR: {e}")
         logger.error(f"Error starting bot: {e}")
         raise
