@@ -27,6 +27,10 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
 
+# Validate environment variables
+if not all([TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, GROQ_API_KEY, ADMIN_CHAT_ID]):
+    raise ValueError("One or more environment variables are missing!")
+
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -48,7 +52,7 @@ user_data = {}
 TAROT_LAYOUTS = {
     'رازهای نهفته': 'Celtic Cross',
     'مسیر سرنوشت': 'Three Card Spread',
-    'آینه灵魂': 'One Card Draw',
+    'آینه روح': 'One Card Draw',
     'چرخه تقدیر': 'Past Present Future',
     'هماهنگی ستارگان': 'Relationship Spread'
 }
@@ -88,7 +92,7 @@ MAIN_MENU = ReplyKeyboardMarkup([
 # Persistent menu (shown after main menu selection)
 PERSISTENT_MENU = ReplyKeyboardMarkup([
     ['خانه 🏠', 'خانه تکانی 🧹']
-], resize_keyboard=True, one_time_keyboard=False)
+], resize_keyboard=True)
 
 # Welcome message (before /start)
 WELCOME_MESSAGE = "🌌 ای مسافر شب‌های پرستاره، به نجوای رویا خوش آمدی... جایی که اسرار نهفته در اعماق روحت آشکار می‌شود. با لمس گزینه آغاز، درهای راز را بگشای. ✨"
@@ -99,8 +103,7 @@ async def pre_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if user_id not in user_data:
-        user_data[user_id] = {}
+    user_data[user_id] = {'state': 'main_menu'}
     await update.message.reply_text(
         "🌟 ای جوینده‌ی حقیقت، به دنیای نجوای رویا قدم نهادی. اسرار کیهان در انتظار توست... ✨\n"
         "حال، کدامین مسیر را برمی‌گزی؟",
@@ -112,53 +115,95 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text if update.message.text else None
 
     if user_id not in user_data:
-        user_data[user_id] = {}
+        user_data[user_id] = {'state': 'main_menu'}
+
+    state = user_data[user_id].get('state', 'main_menu')
+
+    # Handle main menu selections
+    if state == 'main_menu':
+        if text == 'تعبیر خواب 🌙':
+            user_data[user_id]['section'] = 'dream'
+            user_data[user_id]['state'] = 'awaiting_info'
+            await start_section(update, context)
+        elif text == 'فال قهوه ☕️':
+            user_data[user_id]['section'] = 'coffee'
+            user_data[user_id]['state'] = 'awaiting_info'
+            await start_section(update, context)
+        elif text == 'فال تاروت 🃏':
+            user_data[user_id]['section'] = 'tarot'
+            user_data[user_id]['state'] = 'awaiting_info'
+            await start_section(update, context)
+        elif text == 'توضیحات 📜':
+            user_data[user_id]['state'] = 'main_menu'
+            await show_explanations(update, context)
+        else:
+            await update.message.reply_text(
+                "🌑 مسیری ناشناخته... از منو برگزین، ای مسافر. ✨",
+                reply_markup=MAIN_MENU
+            )
+        return
+
+    # Handle persistent menu options
+    if text == 'خانه 🏠':
+        user_data[user_id]['state'] = 'main_menu'
+        await update.message.reply_text(
+            "🏠 به خانه بازگشتی، ای مسافر... اسرار پیشین همچنان نهفته‌اند. ✨",
+            reply_markup=MAIN_MENU
+        )
+        return
+    elif text == 'خانه تکانی 🧹':
+        user_data[user_id] = {'state': 'main_menu'}
+        await update.message.reply_text(
+            "🧹 بادهای تغییر وزیدند و همه چیز پاک شد... از نو آغاز کن، ای جوینده. ✨",
+            reply_markup=MAIN_MENU
+        )
+        return
 
     # Handle user input based on state
-    if 'awaiting' in user_data[user_id]:
-        awaiting = user_data[user_id]['awaiting']
+    if state == 'awaiting_gender':
+        if text in ['مرد 👨', 'زن 👩']:
+            user_data[user_id]['gender'] = text
+            user_data[user_id]['state'] = 'awaiting_birth_month'
+            await ask_birth_month(update, context)
+        else:
+            await update.message.reply_text(
+                "🌑 ای مسافر، انتخابی درست بنما... مرد یا زن؟ ✨",
+                reply_markup=PERSISTENT_MENU
+            )
+        return
 
-        if awaiting == 'gender':
-            if text in ['مرد 👨', 'زن 👩']:
-                user_data[user_id]['gender'] = text
-                await ask_birth_month(update, context)
+    elif state == 'awaiting_birth_month':
+        if text in PERSIAN_MONTHS:
+            user_data[user_id]['birth_month'] = PERSIAN_MONTHS.index(text) + 1
+            user_data[user_id]['state'] = 'awaiting_birth_year'
+            await ask_birth_year(update, context)
+        else:
+            await update.message.reply_text(
+                "🌑 ای جوینده، ماهی از تقویم شمسی برگزین... ✨",
+                reply_markup=PERSISTENT_MENU
+            )
+        return
+
+    elif state == 'awaiting_birth_year':
+        try:
+            year = int(text)
+            current_year = datetime.now().year
+            if 1900 <= year <= current_year:
+                user_data[user_id]['birth_year'] = year
+                user_data[user_id]['state'] = f'awaiting_{user_data[user_id]["section"]}'
+                await proceed_to_section(update, context, user_data[user_id]['section'])
             else:
-                await update.message.reply_text(
-                    "🌑 ای مسافر، انتخابی درست بنما... مرد یا زن؟ ✨",
-                    reply_markup=PERSISTENT_MENU
-                )
-            return
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(
+                "🌑 ای مسافر، سالی معتبر از تقویم شمسی وارد کن... ✨",
+                reply_markup=PERSISTENT_MENU
+            )
+        return
 
-        elif awaiting == 'birth_month':
-            if text in PERSIAN_MONTHS:
-                user_data[user_id]['birth_month'] = PERSIAN_MONTHS.index(text) + 1
-                await ask_birth_year(update, context)
-            else:
-                await update.message.reply_text(
-                    "🌑 ای جوینده، ماهی از تقویم شمسی برگزین... ✨",
-                    reply_markup=PERSISTENT_MENU
-                )
-            return
-
-        elif awaiting == 'birth_year':
+    elif state == 'awaiting_dream':
+        if update.message.voice:
             try:
-                year = int(text)
-                current_year = datetime.now().year
-                if 1900 <= year <= current_year:
-                    user_data[user_id]['birth_year'] = year
-                    del user_data[user_id]['awaiting']
-                    await proceed_to_section(update, context, user_data[user_id]['section'])
-                else:
-                    raise ValueError
-            except ValueError:
-                await update.message.reply_text(
-                    "🌑 ای مسافر، سالی معتبر از تقویم شمسی وارد کن... ✨",
-                    reply_markup=PERSISTENT_MENU
-                )
-            return
-
-        elif awaiting == 'dream':
-            if update.message.voice:
                 voice_file = await update.message.voice.get_file()
                 voice_bytes = await voice_file.download_as_bytearray()
                 with open('temp.ogg', 'wb') as f:
@@ -171,71 +216,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                 dream_text = transcription.text
                 os.remove('temp.ogg')
-            else:
-                dream_text = text
-
-            await interpret_dream(update, context, dream_text)
-            del user_data[user_id]['awaiting']
-            return
-
-        elif awaiting == 'coffee_photo':
-            if update.message.photo:
-                photo_file = await update.message.photo[-1].get_file()
-                photo_bytes = await photo_file.download_as_bytearray()
-                await interpret_coffee(update, context, photo_bytes)
-            else:
+            except Exception as e:
+                logger.error(f"Error processing voice: {e}")
                 await update.message.reply_text(
-                    "🌑 ای جوینده، تصویری واضح از فنجان ارسال کن... ✨",
+                    "🌑 خطایی رخ داد... خواب خود را با کلمات بازگو کن، ای مسافر. ✨",
                     reply_markup=PERSISTENT_MENU
                 )
-            return
+                return
+        else:
+            dream_text = text
 
-        elif awaiting == 'feedback':
-            feedback = text
-            logger.info(f"Feedback from {user_id}: {feedback}")
-            await context.bot.send_message(ADMIN_CHAT_ID, f"Feedback from {user_id}: {feedback}")
+        if dream_text:
+            user_data[user_id]['state'] = 'awaiting_feedback'
+            await interpret_dream(update, context, dream_text)
+        else:
             await update.message.reply_text(
-                "🌟 سپاس از صداقتت، ای مسافر... اسرار بیشتری در انتظارند. ✨",
-                reply_markup=MAIN_MENU
+                "🌑 ای خواب‌دیده، راز خوابت را با کلمات یا صدا بازگو کن... ✨",
+                reply_markup=PERSISTENT_MENU
             )
-            del user_data[user_id]['awaiting']
-            return
+        return
 
-    # Handle main menu selections
-    if text == 'تعبیر خواب 🌙':
-        user_data[user_id]['section'] = 'dream'
-        await start_section(update, context)
+    elif state == 'awaiting_coffee_photo':
+        if update.message.photo:
+            photo_file = await update.message.photo[-1].get_file()
+            photo_bytes = await photo_file.download_as_bytearray()
+            user_data[user_id]['state'] = 'awaiting_feedback'
+            await interpret_coffee(update, context, photo_bytes)
+        else:
+            await update.message.reply_text(
+                "🌑 ای جوینده، تصویری واضح از فنجان ارسال کن... ✨",
+                reply_markup=PERSISTENT_MENU
+            )
+        return
 
-    elif text == 'فال قهوه ☕️':
-        user_data[user_id]['section'] = 'coffee'
-        await start_section(update, context)
-
-    elif text == 'فال تاروت 🃏':
-        user_data[user_id]['section'] = 'tarot'
-        await start_section(update, context)
-
-    elif text == 'توضیحات 📜':
-        await show_explanations(update, context)
-
-    elif text == 'خانه 🏠':
+    elif state == 'awaiting_feedback':
+        feedback = text
+        logger.info(f"Feedback from {user_id}: {feedback}")
+        await context.bot.send_message(ADMIN_CHAT_ID, f"Feedback from {user_id}: {feedback}")
+        user_data[user_id]['state'] = 'main_menu'
         await update.message.reply_text(
-            "🏠 به خانه بازگشتی، ای مسافر... اسرار پیشین همچنان نهفته‌اند. ✨",
+            "🌟 سپاس از صداقتت، ای مسافر... اسرار بیشتری در انتظارند. ✨",
             reply_markup=MAIN_MENU
         )
-
-    elif text == 'خانه تکانی 🧹':
-        if user_id in user_data:
-            del user_data[user_id]
-        await update.message.reply_text(
-            "🧹 بادهای تغییر وزیدند و همه چیز پاک شد... از نو آغاز کن، ای جوینده. ✨",
-            reply_markup=MAIN_MENU
-        )
-
-    else:
-        await update.message.reply_text(
-            "🌑 مسیری ناشناخته... از منو برگزین، ای مسافر. ✨",
-            reply_markup=MAIN_MENU
-        )
+        return
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -245,12 +268,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith('gender_'):
         gender = 'مرد 👨' if data == 'gender_male' else 'زن 👩'
         user_data[user_id]['gender'] = gender
+        user_data[user_id]['state'] = 'awaiting_birth_month'
         await query.answer()
         await ask_birth_month(query.message, context)
 
     elif data.startswith('month_'):
         month = int(data.split('_')[1])
         user_data[user_id]['birth_month'] = month
+        user_data[user_id]['state'] = 'awaiting_birth_year'
         await query.answer()
         await ask_birth_year(query.message, context)
 
@@ -269,6 +294,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cards = random.sample(range(78), num_cards)
         orientations = [random.choice(['upright', 'reversed']) for _ in range(num_cards)]
         user_data[user_id]['tarot_cards'] = list(zip(cards, orientations))
+        user_data[user_id]['state'] = 'awaiting_feedback'
         await query.answer()
         await interpret_tarot(query.message, context)
 
@@ -277,8 +303,10 @@ async def start_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
     section = user_data[user_id].get('section')
 
     if 'gender' not in user_data[user_id] or 'birth_month' not in user_data[user_id] or 'birth_year' not in user_data[user_id]:
+        user_data[user_id]['state'] = 'awaiting_gender'
         await ask_gender(update, context)
     else:
+        user_data[user_id]['state'] = f'awaiting_{section}'
         await proceed_to_section(update, context, section)
 
 async def proceed_to_section(update: Update, context: ContextTypes.DEFAULT_TYPE, section: str):
@@ -288,7 +316,7 @@ async def proceed_to_section(update: Update, context: ContextTypes.DEFAULT_TYPE,
             "🌙 ای خواب‌دیده، راز خوابت را با کلمات یا صدا برایم بازگو کن... ✨",
             reply_markup=PERSISTENT_MENU
         )
-        user_data[user_id]['awaiting'] = 'dream'
+        user_data[user_id]['state'] = 'awaiting_dream'
 
     elif section == 'coffee':
         await update.message.reply_text(
@@ -303,7 +331,7 @@ async def proceed_to_section(update: Update, context: ContextTypes.DEFAULT_TYPE,
             parse_mode='Markdown',
             reply_markup=PERSISTENT_MENU
         )
-        user_data[user_id]['awaiting'] = 'coffee_photo'
+        user_data[user_id]['state'] = 'awaiting_coffee_photo'
 
     elif section == 'tarot':
         keyboard = []
@@ -325,7 +353,6 @@ async def ask_gender(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🌟 ای مسافر، جنسیت روحت را آشکار کن... ✨",
         reply_markup=reply_markup
     )
-    user_data[update.effective_user.id]['awaiting'] = 'gender'
 
 async def ask_birth_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
@@ -336,14 +363,12 @@ async def ask_birth_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📅 ماهی که ستارگان بر تو تابیدند را برگزین... ✨",
         reply_markup=reply_markup
     )
-    user_data[update.effective_user.id]['awaiting'] = 'birth_month'
 
 async def ask_birth_year(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📅 سالی که به این جهان آمدی را با اعداد شمسی وارد کن... ✨",
         reply_markup=PERSISTENT_MENU
     )
-    user_data[update.effective_user.id]['awaiting'] = 'birth_year'
 
 async def interpret_dream(update: Update, context: ContextTypes.DEFAULT_TYPE, dream_text: str):
     user_id = update.effective_user.id
@@ -358,11 +383,15 @@ async def interpret_dream(update: Update, context: ContextTypes.DEFAULT_TYPE, dr
 
     prompt = f"به عنوان استاد تعبیر خواب، با استفاده از اطلاعات شخصی: جنسیت {gender}، ماه تولد {birth_month}، سال تولد {birth_year}، خواب زیر را به صورت متنی کامل، عرفانی، اغواگرایانه و رازآلود تعبیر کن و با ایموجی و نتیجه‌گیری پاسخ ده:\n{dream_text}"
 
-    response = groq_client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="llama3-8b-8192"
-    )
-    interpretation = response.choices[0].message.content
+    try:
+        response = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-8b-8192"
+        )
+        interpretation = response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"Error in dream interpretation: {e}")
+        interpretation = "🌑 خطایی در گشودن رازهای خواب رخ داد... دوباره تلاش کن، ای مسافر. ✨"
 
     await update.message.reply_text(interpretation, parse_mode='Markdown', reply_markup=PERSISTENT_MENU)
     await ask_feedback(update, context)
@@ -381,8 +410,12 @@ async def interpret_coffee(update: Update, context: ContextTypes.DEFAULT_TYPE, p
     img = {'mime_type': 'image/jpeg', 'data': photo_bytes}
     prompt = f"اگر این تصویر یک فنجان قهوه معتبر برای فال قهوه است، به عنوان استاد فال قهوه، با استفاده از اطلاعات شخصی: جنسیت {gender}، ماه تولد {birth_month}، سال تولد {birth_year}، فنجان را تحلیل کن و نتیجه را به صورت متنی اغواگرایانه، عرفانی و رازآلود، با ایموجی و نتیجه‌گیری بده. اگر نامعتبر است، بگو 'نامعتبر'."
 
-    response = gemini_model.generate_content([prompt, img])
-    text = response.text
+    try:
+        response = gemini_model.generate_content([prompt, img])
+        text = response.text
+    except Exception as e:
+        logger.error(f"Error in coffee reading: {e}")
+        text = "نامعتبر"
 
     if 'نامعتبر' in text:
         await update.message.reply_text(
@@ -411,23 +444,35 @@ async def interpret_tarot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     card_names = [f"{TAROT_CARDS[idx]} ({orient})" for idx, orient in cards]
     prompt = f"به عنوان استاد فال تاروت، با استفاده از اطلاعات شخصی: جنسیت {gender}، ماه تولد {birth_month}، سال تولد {birth_year}، تفسیر چیدمان {layout_real} با کارت‌های {', '.join(card_names)} را به صورت متنی اغواگرایانه، عرفانی و رازآلود، با ایموجی و نتیجه‌گیری بده."
 
-    response = groq_client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="llama3-8b-8192"
-    )
-    interpretation = response.choices[0].message.content
+    try:
+        response = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-8b-8192"
+        )
+        interpretation = response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"Error in tarot reading: {e}")
+        interpretation = "🌑 خطایی در گشودن رازهای تاروت رخ داد... دوباره تلاش کن، ای مسافر. ✨"
 
     media = []
     for idx, (card_idx, orient) in enumerate(cards):
         img_path = f'images/{card_idx:02d}.jpg'
-        with open(img_path, 'rb') as img_file:
-            img = Image.open(img_file)
-            if orient == 'reversed':
-                img = img.rotate(180)
-            bio = BytesIO()
-            img.save(bio, 'JPEG')
-            bio.seek(0)
-            media.append(InputMediaPhoto(media=bio, caption=TAROT_CARDS[card_idx]))
+        try:
+            with open(img_path, 'rb') as img_file:
+                img = Image.open(img_file)
+                if orient == 'reversed':
+                    img = img.rotate(180)
+                bio = BytesIO()
+                img.save(bio, 'JPEG')
+                bio.seek(0)
+                media.append(InputMediaPhoto(media=bio, caption=TAROT_CARDS[card_idx]))
+        except Exception as e:
+            logger.error(f"Error loading tarot image {img_path}: {e}")
+            await update.message.reply_text(
+                "🌑 خطایی در نمایش کارت‌ها رخ داد... دوباره تلاش کن، ای مسافر. ✨",
+                reply_markup=PERSISTENT_MENU
+            )
+            return
 
     await update.message.reply_media_group(media)
     await update.message.reply_text(interpretation, parse_mode='Markdown', reply_markup=PERSISTENT_MENU)
@@ -453,15 +498,19 @@ async def ask_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🌌 ای جوینده، از این رازگشایی چه احساسی داری؟ ✨",
         reply_markup=keyboard
     )
-    user_data[update.effective_user.id]['awaiting'] = 'feedback'
+    user_data[update.effective_user.id]['state'] = 'awaiting_feedback'
 
 if __name__ == '__main__':
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    try:
+        application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, pre_start))
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(CallbackQueryHandler(handle_callback))
-    application.add_handler(MessageHandler(filters.VOICE | filters.PHOTO, handle_message))
+        application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, pre_start))
+        application.add_handler(CommandHandler('start', start))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(CallbackQueryHandler(handle_callback))
+        application.add_handler(MessageHandler(filters.VOICE | filters.PHOTO, handle_message))
 
-    application.run_polling()
+        application.run_polling()
+    except Exception as e:
+        logger.error(f"Error starting bot: {e}")
+        raise
