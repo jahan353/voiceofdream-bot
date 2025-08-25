@@ -1,5 +1,5 @@
 temp.ogg
-     bot.log
-     secrets.env
-     *.pyc
-     __pycache__/
+bot.log
+secrets.env
+*.pyc
+__pycache__/
