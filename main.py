@@ -18,19 +18,6 @@ from groq import Groq
 from google.generativeai import GenerativeModel, configure
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
-# Environment variables
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
-ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
-
-# Validate environment variables
-if not all([TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, GROQ_API_KEY, ADMIN_CHAT_ID]):
-    raise ValueError("One or more environment variables are missing!")
-
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -40,10 +27,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Load environment variables
+load_dotenv()
+
+# Environment variables
+try:
+    TELEGRAM_BOT_TOKEN = os.environ['TELEGRAM_BOT_TOKEN']
+    GEMINI_API_KEY = os.environ['GEMINI_API_KEY']
+    GROQ_API_KEY = os.environ['GROQ_API_KEY']
+    ADMIN_CHAT_ID = os.environ['ADMIN_CHAT_ID']
+except KeyError as e:
+    logger.error(f"Missing environment variable: {e}")
+    raise ValueError(f"Environment variable {e} is not set!")
+
 # Configure Gemini and Groq
-configure(api_key=GEMINI_API_KEY)
-gemini_model = GenerativeModel('gemini-1.5-flash')
-groq_client = Groq(api_key=GROQ_API_KEY)
+try:
+    configure(api_key=GEMINI_API_KEY)
+    gemini_model = GenerativeModel('gemini-1.5-flash')
+    groq_client = Groq(api_key=GROQ_API_KEY)
+except Exception as e:
+    logger.error(f"Error configuring APIs: {e}")
+    raise
 
 # User data storage (in-memory; use database for production)
 user_data = {}
@@ -98,11 +102,13 @@ PERSISTENT_MENU = ReplyKeyboardMarkup([
 WELCOME_MESSAGE = "🌌 ای مسافر شب‌های پرستاره، به نجوای رویا خوش آمدی... جایی که اسرار نهفته در اعماق روحت آشکار می‌شود. با لمس گزینه آغاز، درهای راز را بگشای. ✨"
 
 async def pre_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("Handling pre_start")
     if update.message:
         await update.message.reply_text(WELCOME_MESSAGE, parse_mode='Markdown')
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    logger.info(f"Starting bot for user {user_id}")
     user_data[user_id] = {'state': 'main_menu'}
     await update.message.reply_text(
         "🌟 ای جوینده‌ی حقیقت، به دنیای نجوای رویا قدم نهادی. اسرار کیهان در انتظار توست... ✨\n"
@@ -113,6 +119,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text if update.message.text else None
+    logger.info(f"Handling message from {user_id}: {text}")
 
     if user_id not in user_data:
         user_data[user_id] = {'state': 'main_menu'}
@@ -252,7 +259,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif state == 'awaiting_feedback':
         feedback = text
         logger.info(f"Feedback from {user_id}: {feedback}")
-        await context.bot.send_message(ADMIN_CHAT_ID, f"Feedback from {user_id}: {feedback}")
+        try:
+            await context.bot.send_message(ADMIN_CHAT_ID, f"Feedback from {user_id}: {feedback}")
+        except Exception as e:
+            logger.error(f"Error sending feedback: {e}")
         user_data[user_id]['state'] = 'main_menu'
         await update.message.reply_text(
             "🌟 سپاس از صداقتت، ای مسافر... اسرار بیشتری در انتظارند. ✨",
@@ -264,6 +274,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     data = query.data
+    logger.info(f"Handling callback from {user_id}: {data}")
 
     if data.startswith('gender_'):
         gender = 'مرد 👨' if data == 'gender_male' else 'زن 👩'
@@ -301,6 +312,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     section = user_data[user_id].get('section')
+    logger.info(f"Starting section {section} for user {user_id}")
 
     if 'gender' not in user_data[user_id] or 'birth_month' not in user_data[user_id] or 'birth_year' not in user_data[user_id]:
         user_data[user_id]['state'] = 'awaiting_gender'
@@ -311,6 +323,7 @@ async def start_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def proceed_to_section(update: Update, context: ContextTypes.DEFAULT_TYPE, section: str):
     user_id = update.effective_user.id
+    logger.info(f"Proceeding to section {section} for user {user_id}")
     if section == 'dream':
         await update.message.reply_text(
             "🌙 ای خواب‌دیده، راز خوابت را با کلمات یا صدا برایم بازگو کن... ✨",
@@ -375,6 +388,7 @@ async def interpret_dream(update: Update, context: ContextTypes.DEFAULT_TYPE, dr
     gender = user_data[user_id]['gender']
     birth_month = user_data[user_id]['birth_month']
     birth_year = user_data[user_id]['birth_year']
+    logger.info(f"Interpreting dream for user {user_id}: {dream_text}")
 
     await update.message.reply_text(
         "🌌 اسرار در حال آشکار شدن‌اند... لحظه‌ای صبر کن، ای جوینده. ✨"
@@ -401,6 +415,7 @@ async def interpret_coffee(update: Update, context: ContextTypes.DEFAULT_TYPE, p
     gender = user_data[user_id]['gender']
     birth_month = user_data[user_id]['birth_month']
     birth_year = user_data[user_id]['birth_year']
+    logger.info(f"Interpreting coffee for user {user_id}")
 
     await update.message.reply_text(
         "☕️ نقش‌ها در حال پدیدار شدن‌اند... لحظه‌ای صبر کن، ای جوینده. ✨"
@@ -435,6 +450,7 @@ async def interpret_tarot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     gender = user_data[user_id]['gender']
     birth_month = user_data[user_id]['birth_month']
     birth_year = user_data[user_id]['birth_year']
+    logger.info(f"Interpreting tarot for user {user_id}, layout: {layout_key}")
 
     await update.message.reply_text(
         "🃏 کارت‌ها در حال چرخش‌اند... لحظه‌ای صبر کن، ای جوینده. ✨"
@@ -479,6 +495,7 @@ async def interpret_tarot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await ask_feedback(update, context)
 
 async def show_explanations(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("Showing explanations")
     text = (
         "📜 ای جوینده‌ی راز، به نجوای رویا خوش آمدی، جایی که اسرار روح تو در هم‌نوایی با کیهان گشوده می‌شود... ✨\n\n"
         "🌟 *درباره نجوای رویا*: این ربات، چون چراغی در شب‌های بی‌کران، راهنمای توست در مسیر کشف حقیقت. از خواب‌هایت که چون رازهایی در مه نهفته‌اند، تا نقش‌های مرموز قهوه و کارت‌های باستانی تاروت، نجوای رویا تو را به سوی شناخت ژرف‌تر خویشتن رهنمون می‌شود.\n\n"
@@ -490,6 +507,8 @@ async def show_explanations(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown', reply_markup=MAIN_MENU)
 
 async def ask_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    logger.info(f"Asking feedback from user {user_id}")
     keyboard = ReplyKeyboardMarkup([
         ['عالی 🌟', 'خوب 👍'],
         ['متوسط 🤔', 'ضعیف 👎']
@@ -498,10 +517,11 @@ async def ask_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🌌 ای جوینده، از این رازگشایی چه احساسی داری؟ ✨",
         reply_markup=keyboard
     )
-    user_data[update.effective_user.id]['state'] = 'awaiting_feedback'
+    user_data[user_id]['state'] = 'awaiting_feedback'
 
 if __name__ == '__main__':
     try:
+        logger.info("Starting bot application")
         application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
         application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, pre_start))
@@ -510,6 +530,7 @@ if __name__ == '__main__':
         application.add_handler(CallbackQueryHandler(handle_callback))
         application.add_handler(MessageHandler(filters.VOICE | filters.PHOTO, handle_message))
 
+        logger.info("Running polling")
         application.run_polling()
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
