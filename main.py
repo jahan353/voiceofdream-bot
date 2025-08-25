@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG,  # Changed to DEBUG for more detailed logs
+    level=logging.DEBUG,
     filename='bot.log',
     filemode='a'
 )
@@ -35,7 +35,7 @@ try:
     TELEGRAM_BOT_TOKEN = os.environ['TELEGRAM_BOT_TOKEN']
     GEMINI_API_KEY = os.environ['GEMINI_API_KEY']
     GROQ_API_KEY = os.environ['GROQ_API_KEY']
-    ADMIN_CHAT_ID = os.environ['ADMIN_CHAT_ID']
+    ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID', '')
     logger.debug("Environment variables loaded successfully")
 except KeyError as e:
     logger.error(f"Missing environment variable: {e}")
@@ -262,7 +262,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         feedback = text
         logger.debug(f"Feedback from {user_id}: {feedback}")
         try:
-            await context.bot.send_message(ADMIN_CHAT_ID, f"Feedback from {user_id}: {feedback}")
+            if ADMIN_CHAT_ID:
+                await context.bot.send_message(ADMIN_CHAT_ID, f"Feedback from {user_id}: {feedback}")
         except Exception as e:
             logger.error(f"Error sending feedback: {e}")
         user_data[user_id]['state'] = 'main_menu'
@@ -532,8 +533,29 @@ if __name__ == '__main__':
         application.add_handler(CallbackQueryHandler(handle_callback))
         application.add_handler(MessageHandler(filters.VOICE | filters.PHOTO, handle_message))
 
-        logger.info("Running polling")
-        application.run_polling()
+        # Check if running on Railway
+        if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RAILWAY'):
+            # Use webhook for Railway
+            domain = os.environ.get('RAILWAY_STATIC_URL', '')
+            port = int(os.environ.get('PORT', 8000))
+            
+            if domain:
+                application.run_webhook(
+                    listen="0.0.0.0",
+                    port=port,
+                    url_path=TELEGRAM_BOT_TOKEN,
+                    webhook_url=f"{domain}/{TELEGRAM_BOT_TOKEN}"
+                )
+                logger.info(f"Running webhook on {domain}")
+            else:
+                # Fallback to polling if domain not set
+                logger.info("Running polling (webhook not configured)")
+                application.run_polling()
+        else:
+            # Use polling for local development
+            logger.info("Running polling (local development)")
+            application.run_polling()
+            
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
         raise
