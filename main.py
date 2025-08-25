@@ -494,7 +494,7 @@ async def interpret_tarot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     media = []
     for idx, (card_idx, orient) in enumerate(cards):
-        img_path = f'images/{card_idx:02d}.jpg'
+        img_path = f'images/{card_idx:02d}.JPG'
         try:
             with open(img_path, 'rb') as img_file:
                 img = Image.open(img_file)
