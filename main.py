@@ -16,6 +16,10 @@ from telegram.ext import (
 )
 from groq import Groq
 from google.generativeai import GenerativeModel, configure
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Environment variables
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -32,45 +36,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configure Gemini
+# Configure Gemini and Groq
 configure(api_key=GEMINI_API_KEY)
-gemini_model = GenerativeModel('gemini-1.5-flash')  # Free tier model
-
-# Configure Groq
+gemini_model = GenerativeModel('gemini-1.5-flash')
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# User data storage (in-memory for simplicity; use database for production)
+# User data storage (in-memory; use database for production)
 user_data = {}
 
-# Tarot layouts (mystical names for user, real names for AI)
+# Tarot layouts
 TAROT_LAYOUTS = {
-    'رازهای نهفته': 'Celtic Cross',  # 10 cards
-    'مسیر سرنوشت': 'Three Card Spread',  # 3 cards
-    'آینه灵魂': 'One Card Draw',  # 1 card
-    'چرخه تقدیر': 'Past Present Future',  # 3 cards
-    'هماهنگی ستارگان': 'Relationship Spread'  # 7 cards
+    'رازهای نهفته': 'Celtic Cross',
+    'مسیر سرنوشت': 'Three Card Spread',
+    'آینه灵魂': 'One Card Draw',
+    'چرخه تقدیر': 'Past Present Future',
+    'هماهنگی ستارگان': 'Relationship Spread'
 }
 
-# Tarot card names (00-77 as per user)
+# Tarot card names
 TAROT_CARDS = [
-    # Major Arcana 00-21
     'The Fool', 'The Magician', 'The High Priestess', 'The Empress', 'The Emperor',
     'The Hierophant', 'The Lovers', 'The Chariot', 'Strength', 'The Hermit',
     'Wheel of Fortune', 'Justice', 'The Hanged Man', 'Death', 'Temperance',
     'The Devil', 'The Tower', 'The Star', 'The Moon', 'The Sun', 'Judgement', 'The World',
-    # Wands 22-35: Ace to King
     'Ace of Wands', 'Two of Wands', 'Three of Wands', 'Four of Wands', 'Five of Wands',
     'Six of Wands', 'Seven of Wands', 'Eight of Wands', 'Nine of Wands', 'Ten of Wands',
     'Page of Wands', 'Knight of Wands', 'Queen of Wands', 'King of Wands',
-    # Cups 36-49
     'Ace of Cups', 'Two of Cups', 'Three of Cups', 'Four of Cups', 'Five of Cups',
     'Six of Cups', 'Seven of Cups', 'Eight of Cups', 'Nine of Cups', 'Ten of Cups',
     'Page of Cups', 'Knight of Cups', 'Queen of Cups', 'King of Cups',
-    # Swords 50-63
     'Ace of Swords', 'Two of Swords', 'Three of Swords', 'Four of Swords', 'Five of Swords',
     'Six of Swords', 'Seven of Swords', 'Eight of Swords', 'Nine of Swords', 'Ten of Swords',
     'Page of Swords', 'Knight of Swords', 'Queen of Swords', 'King of Swords',
-    # Pentacles 64-77
     'Ace of Pentacles', 'Two of Pentacles', 'Three of Pentacles', 'Four of Pentacles', 'Five of Pentacles',
     'Six of Pentacles', 'Seven of Pentacles', 'Eight of Pentacles', 'Nine of Pentacles', 'Ten of Pentacles',
     'Page of Pentacles', 'Knight of Pentacles', 'Queen of Pentacles', 'King of Pentacles'
@@ -82,15 +79,19 @@ PERSIAN_MONTHS = [
     'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'
 ]
 
-# Main menu
+# Main menu (shown initially)
 MAIN_MENU = ReplyKeyboardMarkup([
     ['تعبیر خواب 🌙', 'فال قهوه ☕️'],
-    ['فال تاروت 🃏', 'توضیحات 📜'],
+    ['فال تاروت 🃏', 'توضیحات 📜']
+], resize_keyboard=True, one_time_keyboard=True)
+
+# Persistent menu (shown after main menu selection)
+PERSISTENT_MENU = ReplyKeyboardMarkup([
     ['خانه 🏠', 'خانه تکانی 🧹']
 ], resize_keyboard=True, one_time_keyboard=False)
 
-# Mystical welcome message (shown before /start)
-WELCOME_MESSAGE = "🌌 ای مسافر شب‌های پرستاره، به نجوای رویا خوش آمدی... جایی که اسرار نهفته در اعماق روحت آشکار می‌شود. با زدن /start، درهای راز را بگشای. ✨"
+# Welcome message (before /start)
+WELCOME_MESSAGE = "🌌 ای مسافر شب‌های پرستاره، به نجوای رویا خوش آمدی... جایی که اسرار نهفته در اعماق روحت آشکار می‌شود. با لمس گزینه آغاز، درهای راز را بگشای. ✨"
 
 async def pre_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
@@ -113,6 +114,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in user_data:
         user_data[user_id] = {}
 
+    # Handle user input based on state
     if 'awaiting' in user_data[user_id]:
         awaiting = user_data[user_id]['awaiting']
 
@@ -121,7 +123,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_data[user_id]['gender'] = text
                 await ask_birth_month(update, context)
             else:
-                await update.message.reply_text("🌑 ای مسافر، انتخابی درست بنما... مرد یا زن؟ ✨")
+                await update.message.reply_text(
+                    "🌑 ای مسافر، انتخابی درست بنما... مرد یا زن؟ ✨",
+                    reply_markup=PERSISTENT_MENU
+                )
             return
 
         elif awaiting == 'birth_month':
@@ -129,7 +134,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_data[user_id]['birth_month'] = PERSIAN_MONTHS.index(text) + 1
                 await ask_birth_year(update, context)
             else:
-                await update.message.reply_text("🌑 ای جوینده، ماهی از تقویم شمسی برگزین... ✨")
+                await update.message.reply_text(
+                    "🌑 ای جوینده، ماهی از تقویم شمسی برگزین... ✨",
+                    reply_markup=PERSISTENT_MENU
+                )
             return
 
         elif awaiting == 'birth_year':
@@ -143,15 +151,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     raise ValueError
             except ValueError:
-                await update.message.reply_text("🌑 ای مسافر، سالی معتبر از تقویم شمسی وارد کن... ✨")
+                await update.message.reply_text(
+                    "🌑 ای مسافر، سالی معتبر از تقویم شمسی وارد کن... ✨",
+                    reply_markup=PERSISTENT_MENU
+                )
             return
 
         elif awaiting == 'dream':
             if update.message.voice:
-                # Download voice
                 voice_file = await update.message.voice.get_file()
                 voice_bytes = await voice_file.download_as_bytearray()
-                # STT with Groq Whisper
                 with open('temp.ogg', 'wb') as f:
                     f.write(voice_bytes)
                 with open('temp.ogg', 'rb') as audio:
@@ -175,8 +184,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 photo_bytes = await photo_file.download_as_bytearray()
                 await interpret_coffee(update, context, photo_bytes)
             else:
-                await update.message.reply_text("🌑 ای جوینده، تصویری واضح از فنجان ارسال کن... ✨")
+                await update.message.reply_text(
+                    "🌑 ای جوینده، تصویری واضح از فنجان ارسال کن... ✨",
+                    reply_markup=PERSISTENT_MENU
+                )
             return
+
+        elif awaiting == 'feedback':
+            feedback = text
+            logger.info(f"Feedback from {user_id}: {feedback}")
+            await context.bot.send_message(ADMIN_CHAT_ID, f"Feedback from {user_id}: {feedback}")
+            await update.message.reply_text(
+                "🌟 سپاس از صداقتت، ای مسافر... اسرار بیشتری در انتظارند. ✨",
+                reply_markup=MAIN_MENU
+            )
+            del user_data[user_id]['awaiting']
+            return
+
+    # Handle main menu selections
+    if text == 'تعبیر خواب 🌙':
+        await start_section(update, context, 'dream')
+
+    elif text == 'فال قهوه ☕️':
+        await start_section(update, context, 'coffee')
+
+    elif text == 'فال تاروت 🃏':
+        await start_section(update, context, 'tarot')
+
+    elif text == 'توضیحات 📜':
+        await show_explanations(update, context)
 
     elif text == 'خانه 🏠':
         await update.message.reply_text(
@@ -192,20 +228,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=MAIN_MENU
         )
 
-    elif text == 'تعبیر خواب 🌙':
-        await start_section(update, context, 'dream')
-
-    elif text == 'فال قهوه ☕️':
-        await start_section(update, context, 'coffee')
-
-    elif text == 'فال تاروت 🃏':
-        await start_section(update, context, 'tarot')
-
-    elif text == 'توضیحات 📜':
-        await show_explanations(update, context)
-
     else:
-        await update.message.reply_text("🌑 مسیری ناشناخته... از منو برگزین، ای مسافر. ✨")
+        await update.message.reply_text(
+            "🌑 مسیری ناشناخته... از منو برگزین، ای مسافر. ✨",
+            reply_markup=MAIN_MENU
+        )
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -228,7 +255,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         layout_key = data.split('_')[2]
         user_data[user_id]['tarot_layout'] = layout_key
         layout_real = TAROT_LAYOUTS[layout_key]
-        # Number of cards based on layout
         card_counts = {
             'Celtic Cross': 10,
             'Three Card Spread': 3,
@@ -237,7 +263,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'Relationship Spread': 7
         }
         num_cards = card_counts[layout_real]
-        # Draw random cards
         cards = random.sample(range(78), num_cards)
         orientations = [random.choice(['upright', 'reversed']) for _ in range(num_cards)]
         user_data[user_id]['tarot_cards'] = list(zip(cards, orientations))
@@ -258,7 +283,7 @@ async def proceed_to_section(update: Update, context: ContextTypes.DEFAULT_TYPE,
     if section == 'dream':
         await update.message.reply_text(
             "🌙 ای خواب‌دیده، راز خوابت را با کلمات یا صدا برایم بازگو کن... ✨",
-            reply_markup=MAIN_MENU
+            reply_markup=PERSISTENT_MENU
         )
         user_data[user_id]['awaiting'] = 'dream'
 
@@ -273,7 +298,7 @@ async def proceed_to_section(update: Update, context: ContextTypes.DEFAULT_TYPE,
             "۵. سرانجام، تصویری **واضح، روشن و کاملاً از بالا** از تمام نمای داخل فنجان برایم ارسال کن.\n\n"
             "من در انتظارم تا اسرار نهفته در آن را برایت بازگو کنم. ✨",
             parse_mode='Markdown',
-            reply_markup=MAIN_MENU
+            reply_markup=PERSISTENT_MENU
         )
         user_data[user_id]['awaiting'] = 'coffee_photo'
 
@@ -313,7 +338,7 @@ async def ask_birth_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ask_birth_year(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📅 سالی که به این جهان آمدی را با اعداد شمسی وارد کن... ✨",
-        reply_markup=MAIN_MENU
+        reply_markup=PERSISTENT_MENU
     )
     user_data[update.effective_user.id]['awaiting'] = 'birth_year'
 
@@ -323,18 +348,20 @@ async def interpret_dream(update: Update, context: ContextTypes.DEFAULT_TYPE, dr
     birth_month = user_data[user_id]['birth_month']
     birth_year = user_data[user_id]['birth_year']
 
-    await update.message.reply_text("🌌 اسرار در حال آشکار شدن‌اند... لحظه‌ای صبر کن، ای جوینده. ✨")
+    await update.message.reply_text(
+        "🌌 اسرار در حال آشکار شدن‌اند... لحظه‌ای صبر کن، ای جوینده. ✨"
+    )
     await asyncio.sleep(5)
 
     prompt = f"به عنوان استاد تعبیر خواب، با استفاده از اطلاعات شخصی: جنسیت {gender}، ماه تولد {birth_month}، سال تولد {birth_year}، خواب زیر را به صورت متنی کامل، عرفانی، اغواگرایانه و رازآلود تعبیر کن و با ایموجی و نتیجه‌گیری پاسخ ده:\n{dream_text}"
 
     response = groq_client.chat.completions.create(
         messages=[{"role": "user", "content": prompt}],
-        model="llama3-8b-8192"  # Free tier model
+        model="llama3-8b-8192"
     )
     interpretation = response.choices[0].message.content
 
-    await update.message.reply_text(interpretation, parse_mode='Markdown')
+    await update.message.reply_text(interpretation, parse_mode='Markdown', reply_markup=PERSISTENT_MENU)
     await ask_feedback(update, context)
 
 async def interpret_coffee(update: Update, context: ContextTypes.DEFAULT_TYPE, photo_bytes: bytes):
@@ -343,23 +370,25 @@ async def interpret_coffee(update: Update, context: ContextTypes.DEFAULT_TYPE, p
     birth_month = user_data[user_id]['birth_month']
     birth_year = user_data[user_id]['birth_year']
 
-    await update.message.reply_text("☕️ نقش‌ها در حال پدیدار شدن‌اند... لحظه‌ای صبر کن، ای جوینده. ✨")
+    await update.message.reply_text(
+        "☕️ نقش‌ها در حال پدیدار شدن‌اند... لحظه‌ای صبر کن، ای جوینده. ✨"
+    )
     await asyncio.sleep(5)
 
-    # Prepare image for Gemini
     img = {'mime_type': 'image/jpeg', 'data': photo_bytes}
-
     prompt = f"اگر این تصویر یک فنجان قهوه معتبر برای فال قهوه است، به عنوان استاد فال قهوه، با استفاده از اطلاعات شخصی: جنسیت {gender}، ماه تولد {birth_month}، سال تولد {birth_year}، فنجان را تحلیل کن و نتیجه را به صورت متنی اغواگرایانه، عرفانی و رازآلود، با ایموجی و نتیجه‌گیری بده. اگر نامعتبر است، بگو 'نامعتبر'."
 
     response = gemini_model.generate_content([prompt, img])
     text = response.text
 
     if 'نامعتبر' in text:
-        await update.message.reply_text("🌑 این نقش، اسرار قهوه را در خود ندارد... تصویری دیگر ارسال کن، ای مسافر. ✨")
+        await update.message.reply_text(
+            "🌑 این نقش، اسرار قهوه را در خود ندارد... تصویری دیگر ارسال کن، ای مسافر. ✨",
+            reply_markup=PERSISTENT_MENU
+        )
         return
 
-    await update.message.reply_text(text, parse_mode='Markdown')
-    del user_data[user_id]['awaiting']
+    await update.message.reply_text(text, parse_mode='Markdown', reply_markup=PERSISTENT_MENU)
     await ask_feedback(update, context)
 
 async def interpret_tarot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -371,7 +400,9 @@ async def interpret_tarot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     birth_month = user_data[user_id]['birth_month']
     birth_year = user_data[user_id]['birth_year']
 
-    await update.message.reply_text("🃏 کارت‌ها در حال چرخش‌اند... لحظه‌ای صبر کن، ای جوینده. ✨")
+    await update.message.reply_text(
+        "🃏 کارت‌ها در حال چرخش‌اند... لحظه‌ای صبر کن، ای جوینده. ✨"
+    )
     await asyncio.sleep(5)
 
     card_names = [f"{TAROT_CARDS[idx]} ({orient})" for idx, orient in cards]
@@ -383,7 +414,6 @@ async def interpret_tarot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     interpretation = response.choices[0].message.content
 
-    # Send card images
     media = []
     for idx, (card_idx, orient) in enumerate(cards):
         img_path = f'images/{card_idx:02d}.jpg'
@@ -397,18 +427,19 @@ async def interpret_tarot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media.append(InputMediaPhoto(media=bio, caption=TAROT_CARDS[card_idx]))
 
     await update.message.reply_media_group(media)
-    await update.message.reply_text(interpretation, parse_mode='Markdown')
+    await update.message.reply_text(interpretation, parse_mode='Markdown', reply_markup=PERSISTENT_MENU)
     await ask_feedback(update, context)
 
 async def show_explanations(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "📜 ای مسافر، این نکات را به خاطر بسپار:\n\n"
-        "- خانه 🏠: بازگشت به آغاز بدون پاک کردن اسرار.\n"
-        "- خانه تکانی 🧹: پاک کردن همه چیز و شروع تازه.\n"
-        "- حریم خصوصی: اسرار تو نزد من امانت است، تنها برای آشکارسازی استفاده می‌شود.\n"
-        "- امنیت: هیچ اطلاعی به بیرون نمی‌رود، در دنیای رازها می‌ماند. ✨"
+        "📜 ای جوینده‌ی راز، به نجوای رویا خوش آمدی، جایی که اسرار روح تو در هم‌نوایی با کیهان گشوده می‌شود... ✨\n\n"
+        "🌟 *درباره نجوای رویا*: این ربات، راهنمایی عرفانی است که از خواب‌ها، نقش‌های قهوه و کارت‌های تاروت رازهای نهان را برایت بازگو می‌کند. هر گام تو در این مسیر، سفری است به سوی حقیقت درونی.\n\n"
+        "🔒 *حریم خصوصی*: اسرار تو نزد ما امانت است. اطلاعات تو، از خواب‌ها تا تصاویر فنجان، تنها برای گشودن رازهای کیهانی استفاده می‌شود و در دالان‌های امن این ربات محفوظ می‌ماند.\n\n"
+        "🏠 *خانه*: با انتخاب این گزینه، به آغاز سفر بازمی‌گردی، جایی که می‌توانی مسیر جدیدی برگزینی، در حالی که اسرار پیشینت همچنان در خاطر ما نهفته است.\n\n"
+        "🧹 *خانه تکانی*: این گزینه چون بادی نیرومند، همه اسرار و اطلاعات پیشین تو را پاک می‌کند تا سفری تازه از ابتدا آغاز کنی.\n\n"
+        "ای مسافر، اکنون کدامین مسیر را برمی‌گزی؟ ✨"
     )
-    await update.message.reply_text(text, reply_markup=MAIN_MENU)
+    await update.message.reply_text(text, parse_mode='Markdown', reply_markup=MAIN_MENU)
 
 async def ask_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = ReplyKeyboardMarkup([
@@ -421,27 +452,13 @@ async def ask_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     user_data[update.effective_user.id]['awaiting'] = 'feedback'
 
-async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if 'awaiting' in user_data[user_id] and user_data[user_id]['awaiting'] == 'feedback':
-        feedback = update.message.text
-        logger.info(f"Feedback from {user_id}: {feedback}")
-        await context.bot.send_message(ADMIN_CHAT_ID, f"Feedback from {user_id}: {feedback}")
-        await update.message.reply_text("🌟 سپاس از صداقتت، ای مسافر... اسرار بیشتری در انتظارند. ✨", reply_markup=MAIN_MENU)
-        del user_data[user_id]['awaiting']
-
 if __name__ == '__main__':
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Pre-start handler for messages before /start
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, pre_start))
-
     application.add_handler(CommandHandler('start', start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(handle_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_feedback))  # For feedback
-
-    # For voice and photo
     application.add_handler(MessageHandler(filters.VOICE | filters.PHOTO, handle_message))
 
     application.run_polling()
